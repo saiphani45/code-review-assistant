@@ -198,22 +198,10 @@ const CodeReviewDetail: React.FC<Props> = ({ owner, repo, pullRequest }) => {
 
     try {
       setAnalysisLoading(true);
-      const response = await fetch("/api/analysis/analyze", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          code,
-          language: getFileLanguage(selectedFile?.filename || ""),
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Analysis failed");
-      }
-
-      const analysisData = await response.json();
+      const analysisData = await githubApi.analyze(
+        code,
+        getFileLanguage(selectedFile?.filename || "")
+      );
       setAnalysis(analysisData);
     } catch (error) {
       console.log("error", error);
@@ -449,8 +437,20 @@ const FileStatusBadge: React.FC<FileStatusBadgeProps> = ({
 };
 
 interface DiffViewProps {
-  file: File | null;
-  comments: Comment[];
+  file: {
+    patch?: string;
+    filename?: string;
+  } | null;
+  comments: Array<{
+    id: number;
+    path?: string;
+    user: {
+      login: string;
+      avatar_url: string;
+    };
+    created_at: string;
+    body: string;
+  }>;
   onComment: (lineNumber?: number) => Promise<void>;
   newComment: string;
   setNewComment: (comment: string) => void;
@@ -471,12 +471,40 @@ const DiffView: React.FC<DiffViewProps> = ({
     );
   }
 
+  const renderDiffLine = (line: string) => {
+    if (line.startsWith("+")) {
+      return (
+        <div className="bg-green-950/10 text-green-900 dark:bg-green-950/30 dark:text-green-400 w-full">
+          {line}
+        </div>
+      );
+    } else if (line.startsWith("-")) {
+      return (
+        <div className="bg-red-950/10 text-red-900 dark:bg-red-950/30 dark:text-red-400 w-full">
+          {line}
+        </div>
+      );
+    } else if (line.startsWith("@@ ")) {
+      return (
+        <div className="bg-blue-950/10 text-blue-900 dark:bg-blue-950/30 dark:text-blue-400 w-full">
+          {line}
+        </div>
+      );
+    }
+    return <div>{line}</div>;
+  };
+
+  const diffLines = file.patch?.split("\n") || [];
+
   return (
     <ScrollArea className="h-full w-full rounded-md border">
       <div className="p-4 space-y-4">
-        <pre className="whitespace-pre-wrap font-mono text-sm">
-          {file?.patch || "No changes"}
+        <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed">
+          {diffLines.map((line, index) => (
+            <React.Fragment key={index}>{renderDiffLine(line)}</React.Fragment>
+          ))}
         </pre>
+
         {comments
           .filter((comment) => comment?.path === file?.filename)
           .map((comment) => (
@@ -503,6 +531,7 @@ const DiffView: React.FC<DiffViewProps> = ({
               </CardContent>
             </Card>
           ))}
+
         <Card>
           <CardContent className="pt-4">
             <Textarea

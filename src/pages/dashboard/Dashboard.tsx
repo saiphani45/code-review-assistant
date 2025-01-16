@@ -11,19 +11,9 @@ import {
   Activity,
   GitFork,
   BookOpen,
-  Bot,
-  Command,
-  Frame,
-  Map,
-  PieChart,
-  Settings2,
-  SquareTerminal,
-  GalleryVerticalEnd,
 } from "lucide-react";
 import { NavMain } from "@/components/nav-main";
-import { NavProjects } from "@/components/nav-projects";
 import { NavUser } from "@/components/nav-user";
-import { TeamSwitcher } from "@/components/team-switcher";
 import {
   Sidebar,
   SidebarContent,
@@ -55,104 +45,100 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { githubApi } from "@/services/api";
 
-// Sample data for sidebar navigation
-const sidebarData = {
+interface Repository {
+  id: number;
+  name: string;
+  private: boolean;
+  language: string | null;
+  description: string | null;
+  open_issues_count: number;
+  updated_at: string;
+  owner: {
+    login: string;
+    avatar_url: string;
+  };
+}
+
+interface PullRequest {
+  id: number;
+  number: number;
+  title: string;
+  created_at: string;
   user: {
-    name: "John Doe",
-    email: "john@example.com",
-    avatar: "/avatars/user.jpg",
-  },
-  teams: [
-    {
-      name: "GitHub Team",
-      logo: GitFork,
-      plan: "Enterprise",
-    },
-    {
-      name: "Dev Team",
-      logo: Command,
-      plan: "Pro",
-    },
-  ],
+    login: string;
+    avatar_url: string;
+  };
+  head: {
+    ref: string;
+  };
+  base: {
+    ref: string;
+  };
+}
+
+const sidebarData = {
   navMain: [
     {
       title: "Dashboard",
-      url: "#",
+      url: "/",
       icon: BarChart3,
       isActive: true,
       items: [
         {
-          title: "Overview",
-          url: "#",
+          title: "Repositories",
+          url: "/dashboard",
         },
         {
-          title: "Analytics",
-          url: "#",
+          title: "Pull Requests",
+          url: "/dashboard",
         },
       ],
     },
     {
       title: "Repository",
-      url: "#",
+      url: "/repos",
       icon: GitFork,
       items: [
         {
           title: "All Repos",
-          url: "#",
+          url: "/dashboard",
         },
         {
-          title: "Settings",
-          url: "#",
+          title: "Documentation",
+          url: "/dashboard",
+          icon: BookOpen,
         },
       ],
-    },
-    {
-      title: "Documentation",
-      url: "#",
-      icon: BookOpen,
-      items: [
-        {
-          title: "Guides",
-          url: "#",
-        },
-        {
-          title: "API",
-          url: "#",
-        },
-      ],
-    },
-  ],
-  projects: [
-    {
-      name: "Frontend",
-      url: "#",
-      icon: Frame,
-    },
-    {
-      name: "Backend",
-      url: "#",
-      icon: Command,
-    },
-    {
-      name: "Mobile",
-      url: "#",
-      icon: Map,
     },
   ],
 };
+interface AppSidebarProps
+  extends React.ComponentPropsWithoutRef<typeof Sidebar> {
+  userProfile: Repository["owner"] | null;
+}
 
-const AppSidebar = ({ ...props }) => {
+const AppSidebar = ({ userProfile, ...props }: AppSidebarProps) => {
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        <TeamSwitcher teams={sidebarData.teams} />
+        <div className="flex items-center p-4">
+          <GitFork className="h-6 w-6 mr-2" />
+          <span className="font-semibold">Code Review</span>
+        </div>
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={sidebarData.navMain} />
-        <NavProjects projects={sidebarData.projects} />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={sidebarData.user} />
+        {userProfile && (
+          <NavUser
+            user={{
+              name: userProfile.login,
+              email: `${userProfile.login}@github.com`,
+              avatar: userProfile?.avatar_url,
+            }}
+          />
+        )}
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
@@ -161,12 +147,15 @@ const AppSidebar = ({ ...props }) => {
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const [repositories, setRepositories] = useState([]);
-  const [selectedRepo, setSelectedRepo] = useState(null);
-  const [pullRequests, setPullRequests] = useState([]);
+  const [repositories, setRepositories] = useState<Repository[]>([]);
+  const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null);
+  const [pullRequests, setPullRequests] = useState<PullRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [prLoading, setPrLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [userProfile, setUserProfile] = useState<Repository["owner"] | null>(
+    null
+  );
 
   useEffect(() => {
     fetchRepositories();
@@ -177,9 +166,16 @@ const Dashboard = () => {
       setLoading(true);
       const data = await githubApi.getRepos();
       const sortedRepos = Array.isArray(data)
-        ? data.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
+        ? data.sort(
+            (a, b) =>
+              new Date(b.updated_at).getTime() -
+              new Date(a.updated_at).getTime()
+          )
         : [];
       setRepositories(sortedRepos);
+      if (sortedRepos.length > 0) {
+        setUserProfile(sortedRepos[0].owner);
+      }
     } catch (error) {
       console.error("Error fetching repositories:", error);
       setRepositories([]);
@@ -188,7 +184,7 @@ const Dashboard = () => {
     }
   };
 
-  const fetchPullRequests = async (repo) => {
+  const fetchPullRequests = async (repo: Repository) => {
     try {
       setPrLoading(true);
       setSelectedRepo(repo);
@@ -203,7 +199,7 @@ const Dashboard = () => {
     }
   };
 
-  const formatDate = (dateString) => {
+  const formatDate = (dateString: string): string => {
     return new Intl.DateTimeFormat("en-US", {
       month: "short",
       day: "numeric",
@@ -222,7 +218,7 @@ const Dashboard = () => {
   return (
     <div className="flex min-h-screen">
       <SidebarProvider>
-        <AppSidebar />
+        <AppSidebar userProfile={userProfile} />
         <SidebarInset>
           <header className="flex h-16 shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear">
             <div className="flex items-center gap-2 px-4">
@@ -395,7 +391,7 @@ const Dashboard = () => {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ScrollArea className="h-[50vh]">
+                  <ScrollArea className="h-[calc(100vh-400px)]">
                     <div className="space-y-2">
                       {prLoading ? (
                         <div className="flex justify-center p-4">
@@ -410,10 +406,10 @@ const Dashboard = () => {
                           <Button
                             key={pr.id}
                             variant="outline"
-                            className="w-full justify-start p-4"
+                            className="w-full justify-start p-8 hover:bg-accent"
                             onClick={() =>
                               navigate(
-                                `/${selectedRepo.owner.login}/${selectedRepo.name}/pull/${pr.number}`
+                                `/${selectedRepo?.owner.login}/${selectedRepo?.name}/pull/${pr.number}`
                               )
                             }
                           >

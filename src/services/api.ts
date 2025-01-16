@@ -87,6 +87,13 @@ export const githubApi = {
     );
     return data;
   },
+  analyze: async (code: any, language: string) => {
+    const { data } = await api.post(`/api/analysis/analyze`, {
+      code,
+      language,
+    });
+    return data;
+  },
 
   submitReview: async (
     owner: string,
