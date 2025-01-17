@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState, useEffect } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -31,6 +32,9 @@ import {
   Loader2,
   GitBranch,
   GitCommit,
+  AlertTriangle,
+  CheckCircle,
+  Zap,
 } from "lucide-react";
 import { githubApi } from "@/services/api";
 
@@ -113,29 +117,34 @@ interface PullRequest {
   };
 }
 
-interface CodeAnalysis {
-  suggestions: Array<{
-    type: "improvement" | "warning" | "error";
-    message: string;
-    line?: number;
-    severity: "low" | "medium" | "high";
-  }>;
-  quality_score: number;
-  potential_issues: Array<{
-    type: string;
-    description: string;
-    location?: {
-      line: number;
-      column: number;
-    };
-    severity: "low" | "medium" | "high";
-  }>;
-  metrics: {
-    complexity: number;
-    maintainability: number;
-    duplication: number;
-    testCoverage?: number;
-  };
+interface AnalysisSuggestion {
+  type: "quality" | "practice" | "bug" | "performance" | "security";
+  content: string;
+  confidence: number;
+  improvement?: string;
+  codeExample?: string;
+  severity: "low" | "medium" | "high";
+  lineNumbers?: number[];
+}
+
+interface ComplexityMetrics {
+  lines: number;
+  functions: number;
+  classes: number;
+  cyclomaticComplexity: number;
+  maintainabilityIndex: number;
+  duplicateCodePercentage: number;
+}
+
+interface AnalysisResponse {
+  aiSuggestions: AnalysisSuggestion[];
+  complexity: ComplexityMetrics;
+  timestamp: string;
+}
+
+interface AnalysisViewProps {
+  analysis: AnalysisResponse | null;
+  loading: boolean;
 }
 
 interface ReviewAction {
@@ -156,7 +165,7 @@ const CodeReviewDetail: React.FC<Props> = ({ owner, repo, pullRequest }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [newComment, setNewComment] = useState<string>("");
   const [loading, setLoading] = useState(true);
-  const [analysis, setAnalysis] = useState<CodeAnalysis | null>(null);
+  const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const { toast } = useToast();
 
@@ -555,11 +564,6 @@ const DiffView: React.FC<DiffViewProps> = ({
   );
 };
 
-interface AnalysisViewProps {
-  analysis: CodeAnalysis | null;
-  loading: boolean;
-}
-
 const AnalysisView: React.FC<AnalysisViewProps> = ({ analysis, loading }) => {
   if (loading) {
     return (
@@ -577,13 +581,46 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ analysis, loading }) => {
     );
   }
 
-  const getSeverityColor = (severity: "low" | "medium" | "high") => {
-    const colors = {
-      low: "text-yellow-500",
-      medium: "text-orange-500",
-      high: "text-red-500",
+  const getSeverityColor = (severity: AnalysisSuggestion["severity"]) => {
+    switch (severity) {
+      case "high":
+        return "text-red-500";
+      case "medium":
+        return "text-orange-500";
+      case "low":
+        return "text-yellow-500";
+    }
+  };
+
+  const getSeverityIcon = (severity: AnalysisSuggestion["severity"]) => {
+    switch (severity) {
+      case "high":
+        return <AlertTriangle className="h-5 w-5 text-red-500" />;
+      case "medium":
+        return <Zap className="h-5 w-5 text-orange-500" />;
+      case "low":
+        return <CheckCircle className="h-5 w-5 text-yellow-500" />;
+    }
+  };
+
+  const getComplexityStatus = (metric: string, value: number) => {
+    const thresholds = {
+      cyclomaticComplexity: { warning: 10, critical: 20 },
+      maintainabilityIndex: { warning: 65, critical: 50 },
+      functions: { warning: 10, critical: 20 },
+      classes: { warning: 5, critical: 10 },
+      lines: { warning: 300, critical: 500 },
+      duplicateCodePercentage: { warning: 10, critical: 20 },
     };
-    return colors[severity];
+
+    const threshold = thresholds[metric as keyof typeof thresholds];
+    if (!threshold) return "normal";
+
+    if (value >= threshold.critical)
+      return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400";
+    if (value >= threshold.warning)
+      return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400";
+    return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400";
   };
 
   return (
@@ -591,60 +628,31 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ analysis, loading }) => {
       <div className="space-y-4 p-4">
         <Card>
           <CardHeader>
-            <CardTitle>Code Quality Metrics</CardTitle>
+            <CardTitle className="flex items-center justify-between">
+              Code Metrics
+              <Badge variant="outline">
+                {new Date(analysis.timestamp).toLocaleString()}
+              </Badge>
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-sm text-muted-foreground">Quality Score</p>
-                <p className="text-2xl font-bold">
-                  {analysis?.quality_score}/100
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Complexity</p>
-                <p className="text-2xl font-bold">
-                  {analysis?.metrics?.complexity}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Maintainability</p>
-                <p className="text-2xl font-bold">
-                  {analysis?.metrics?.maintainability}/100
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Duplication</p>
-                <p className="text-2xl font-bold">
-                  {analysis?.metrics?.duplication}%
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Suggestions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {analysis?.suggestions.map((suggestion, index) => (
+              {Object.entries(analysis.complexity).map(([metric, value]) => (
                 <div
-                  key={index}
-                  className={`p-2 rounded-md border ${getSeverityColor(
-                    suggestion?.severity
+                  key={metric}
+                  className={`p-4 rounded-lg ${getComplexityStatus(
+                    metric,
+                    value
                   )}`}
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">{suggestion?.type}</span>
-                    {suggestion?.line && (
-                      <span className="text-sm text-muted-foreground">
-                        Line {suggestion?.line}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-sm mt-1">{suggestion?.message}</p>
+                  <p className="text-sm font-medium capitalize">
+                    {metric.replace(/([A-Z])/g, " $1")}
+                  </p>
+                  <p className="text-2xl font-bold">
+                    {metric.includes("Percentage")
+                      ? `${value.toFixed(1)}%`
+                      : value}
+                  </p>
                 </div>
               ))}
             </div>
@@ -653,27 +661,55 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ analysis, loading }) => {
 
         <Card>
           <CardHeader>
-            <CardTitle>Potential Issues</CardTitle>
+            <CardTitle>Analysis Suggestions</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              {analysis?.potential_issues.map((issue, index) => (
+            <div className="space-y-4">
+              {analysis.aiSuggestions.map((suggestion, index) => (
                 <div
                   key={index}
-                  className={`p-2 rounded-md border ${getSeverityColor(
-                    issue?.severity
-                  )}`}
+                  className="p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">{issue?.type}</span>
-                    {issue?.location && (
-                      <span className="text-sm text-muted-foreground">
-                        Line {issue?.location?.line}, Column{" "}
-                        {issue?.location?.column}
-                      </span>
-                    )}
+                  <div className="flex items-start gap-4">
+                    {getSeverityIcon(suggestion.severity)}
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="font-medium capitalize">
+                          {suggestion.type}
+                        </span>
+                        <Badge
+                          variant="outline"
+                          className={getSeverityColor(suggestion.severity)}
+                        >
+                          {suggestion.severity} severity
+                        </Badge>
+                        <Badge variant="outline">
+                          {(suggestion.confidence * 100).toFixed(0)}% confidence
+                        </Badge>
+                      </div>
+                      <p className="text-sm mb-2">{suggestion.content}</p>
+                      {suggestion.improvement && (
+                        <div className="mt-2 p-3 rounded bg-muted">
+                          <p className="text-sm font-medium mb-1">
+                            Suggested Improvement:
+                          </p>
+                          <p className="text-sm">{suggestion.improvement}</p>
+                        </div>
+                      )}
+                      {suggestion.codeExample && (
+                        <pre className="mt-2 p-3 rounded bg-muted overflow-x-auto">
+                          <code className="text-sm">
+                            {suggestion.codeExample}
+                          </code>
+                        </pre>
+                      )}
+                      {suggestion.lineNumbers && (
+                        <p className="text-sm text-muted-foreground mt-2">
+                          Affected lines: {suggestion.lineNumbers.join(", ")}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  <p className="text-sm mt-1">{issue?.description}</p>
                 </div>
               ))}
             </div>
