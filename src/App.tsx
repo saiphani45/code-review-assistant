@@ -13,7 +13,7 @@ const App = () => {
     <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme">
       <main className="min-h-screen bg-background">
         <Routes>
-          <Route path="/login" element={<GitHubLogin />} />
+          <Route path="/" element={<GitHubLogin />} />
           <Route path="/github/callback" element={<GitHubCallback />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route
